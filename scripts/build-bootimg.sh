@@ -81,7 +81,10 @@ LIST=$P/out/initramfs.list
 "$KOBJ/usr/gen_init_cpio" "$LIST" | gzip -9 > "$P/out/initramfs.cpio.gz"
 
 # Stock bullhead cmdline minus the UART console and Android-only bits.
-CMDLINE="boot_cpus=0-5 lpm_levels.sleep_disabled=1 msm_poweroff.download_mode=0"
+# GLIBC_TUNABLES: unknown NAME=value parameters become /init's environment,
+# inherited by every process. glibc >= 2.35 registers rseq (syscall 293) in
+# each new process; this 3.10 kernel lacks it and logs a register dump per try.
+CMDLINE="boot_cpus=0-5 lpm_levels.sleep_disabled=1 msm_poweroff.download_mode=0 GLIBC_TUNABLES=glibc.pthread.rseq=0"
 python3 "$P/scripts/mkbootimg.py" \
 	--kernel "$KOBJ/arch/arm64/boot/Image.gz-dtb" \
 	--ramdisk "$P/out/initramfs.cpio.gz" \

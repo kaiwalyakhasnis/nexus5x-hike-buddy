@@ -1,5 +1,7 @@
 #!/bin/busybox sh
 # PID 1. Mount the API filesystems, then hand over to busybox init (inittab).
+# The environment comes from the kernel command line (scripts/build-bootimg.sh),
+# including GLIBC_TUNABLES.
 /bin/busybox mount -t proc proc /proc
 /bin/busybox --install -s
 mount -t sysfs sysfs /sys
