@@ -15,7 +15,7 @@ CXXFLAGS := -O2 -std=c++14 -Wall -fno-exceptions -Iminui/include -Iminui -DOVERS
 LDFLAGS  := -static -s
 LDLIBS   := -lm
 
-SRCS := main.cpp sys.cpp minui_c.cpp hub.cpp power.cpp map.cpp gps.cpp minui/graphics.cpp minui/graphics_fbdev.cpp minui/events.cpp
+SRCS := main.cpp sys.cpp minui_c.cpp power.cpp map.cpp gps.cpp minui/graphics.cpp minui/graphics_fbdev.cpp minui/events.cpp
 OBJS := $(SRCS:%.cpp=$(OUT)/%.o)
 
 $(OUT)/hike-buddy: $(OBJS) $(RUSTLIB)

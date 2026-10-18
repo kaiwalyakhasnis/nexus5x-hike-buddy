@@ -61,6 +61,10 @@ void klog(const char* fmt, ...) {
   else fwrite(buf + 3, 1, n - 3, stderr);
 }
 
+// For the Rust side (src/sys.rs): the boot clock and a preformatted log line.
+extern "C" int64_t hb_now_boot_ms() { return now_boot_ms(); }
+extern "C" void hb_klog(const char* msg) { klog("%s", msg); }
+
 void wake_lock() { write_str("/sys/power/wake_lock", "hike-buddy"); }
 void wake_unlock() { write_str("/sys/power/wake_unlock", "hike-buddy"); }
 void autosleep(bool on) { write_str("/sys/power/autosleep", on ? "mem" : "off"); }

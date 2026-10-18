@@ -8,7 +8,9 @@
 pub mod altitude;
 pub mod draw;
 mod gr;
+pub mod hub;
 pub mod segment;
+mod sys;
 
 /// Version string of the Rust part, NUL-terminated, for the startup log.
 #[no_mangle]
