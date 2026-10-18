@@ -14,6 +14,8 @@ static const uint32_t EVT_NO_SENSOR_CONFIG_EVENT = 0x300;
 
 enum { CONFIG_CMD_DISABLE = 0, CONFIG_CMD_ENABLE = 1, CONFIG_CMD_FLUSH = 2 };
 
+// Wire format written to /dev/nanohub to configure one sensor: rate in Hz x 1024
+// (sensor_hz), latency in ns (how long the hub may batch before waking us).
 struct ConfigCmd {
   uint32_t evtType;
   uint64_t latency;
@@ -23,6 +25,10 @@ struct ConfigCmd {
   uint16_t flags;
 } __attribute__((packed));
 
+// Packets read from /dev/nanohub: an EventHeader, then numSamples samples of
+// one- or three-axis layout. The first sample's 4-byte slot holds this
+// FirstSample instead of a time delta; later ones hold the delta to the
+// previous sample.
 struct FirstSample {
   uint8_t numSamples;
   uint8_t numFlushes;
@@ -85,6 +91,7 @@ bool hub_open() {
 
 int hub_fd() { return g_fd; }
 
+// Writes one ConfigCmd (enable, disable or flush) and logs it.
 static bool send_config(uint8_t sens_type, uint8_t cmd, uint32_t rate, uint64_t latency) {
   if (g_fd < 0) return false;
   ConfigCmd c = {};

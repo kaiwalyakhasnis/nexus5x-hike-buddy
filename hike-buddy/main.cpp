@@ -22,7 +22,7 @@
 //   arrows change page,
 //   15 s idle -> off. The screen wakes on the page it was left on. The touch
 //   controller sleeps with the panel, so touch costs nothing screen-off.
-//   The battery page doesn't need the compass, so it turns it off.
+//   The compass runs only while the main page shows.
 //
 // Battery accounting: see power.h. While unplugged it keeps a report and a
 // log under /tmp (scripts/power-report.sh); the average current of each
@@ -50,6 +50,8 @@
 #include "segment.h"
 #include "sys.h"
 
+// Backlight steps for VOL+/- (lcd-backlight, 0..255). The backlight is most
+// of the screen-on power, so it starts at the dimmest step.
 static const int kBacklight[] = {1, 3, 10, 40, 120, 255};
 static const int kNumBacklight = sizeof(kBacklight) / sizeof(kBacklight[0]);
 static const int64_t kScreenTimeoutMs = 15000;
@@ -58,19 +60,19 @@ static const int64_t kScreenTimeoutMs = 15000;
 static const int64_t kSettleMs = 3000;
 static const uint64_t kSec = 1000000000ull;
 static const uint64_t kBatchNs = 300 * kSec;  // hub batching while the screen is off
-static const int64_t kMinRedrawMs = 150;
-static const float kRedrawDeg = 1.0f;
+static const int64_t kMinRedrawMs = 150;  // at most ~7 fps: every frame redraws all 1080x1920 px
+static const float kRedrawDeg = 1.0f;     // compass change worth a redraw
 static const float kSmoothing = 0.25f;  // compass low-pass weight per 12.5 Hz sample
 static const int kPages = 2;
 static const int kMapPage = 1;
 static const int kBodyTop = 170;      // below the header; only the body slides
-static const int kSlideFrames = 6;
+static const int kSlideFrames = 6;    // frames of the page slide animation
 static const int kSwipeMinPx = 150;   // horizontal travel that counts as a swipe
 static const int kTapMaxPx = 60;      // movement still counted as a tap
 static const int kArrowY = 1850;      // page arrows, bottom corners
 static const int kArrowZone = 260;    // tap area around an arrow, px
-static const int64_t kAccountEveryMs = 1000;
-static const int64_t kDragRedrawMs = 40;
+static const int64_t kAccountEveryMs = 1000;  // battery booking + clock-jump check, when awake
+static const int64_t kDragRedrawMs = 40;      // the map follows a finger at up to 25 fps
 static const char* const kMapPath = "/share/hike-buddy.map";
 static const char* const kXtraPath = "/share/xtra3gr.bin";  // downloaded at build time
 // Demo mode for screenshots: GPS positions are ignored, so the real location
@@ -80,7 +82,7 @@ static const char* const kDemoFlag = "/tmp/hike-buddy-demo";
 static const int64_t kClockJumpMs = 2000;  // wall clock moved: tell the GPS engine
 static const float kMapMpp[] = {1.5f, 3, 6, 12, 25, 50, 100};  // metres per pixel
 static const int kMapZooms = sizeof(kMapMpp) / sizeof(kMapMpp[0]);
-static const int kMapButtonR = 46;
+static const int kMapButtonR = 46;  // map buttons' radius, px
 static const double kTakaoLat = 35.6251, kTakaoLon = 139.2436;  // first view without a fix
 
 // GPS duty cycle (seconds on CLOCK_BOOTTIME).
@@ -146,6 +148,7 @@ static struct {
 
 static double now_s() { return now_boot_ms() / 1000.0; }
 
+// printf-style text with its top-left at x,y; scale multiplies the 10x18 font.
 static void text(int x, int y, int scale, const char* fmt, ...) __attribute__((format(printf, 4, 5)));
 static void text(int x, int y, int scale, const char* fmt, ...) {
   char buf[96];
@@ -162,6 +165,7 @@ static void text_centered(int cx, int cy, int scale, const char* s) {
   gr_text_scaled(gr_sys_font(), cx - w / 2, cy - h / 2, s, scale);
 }
 
+// Smoothed compass heading, degrees clockwise from north, 0..360.
 static float heading_deg() {
   float d = atan2f(S.hx, S.hy) * 180.0f / float(M_PI);
   return d < 0 ? d + 360.0f : d;
@@ -253,6 +257,8 @@ static void draw_compass(int cx, int cy, int r, float heading) {
   draw_ring(cx, cy, 0, 7);
 }
 
+// The main page's GPS status line: coordinates while a fix is fresh (< 10 s),
+// otherwise the search progress or how old the last fix is.
 static void draw_gps_line(int y) {
   double now = now_s();
   if (!gps_connected()) {
@@ -277,6 +283,9 @@ static void draw_gps_line(int y) {
   }
 }
 
+// The fixed top strip on every page: clock ("--:--" until the PC or GPS sets
+// it), charge left from the fuel gauge, battery % ("+" when charging), and
+// the page dots. Positions are laid out for the 1080 px wide panel.
 static void draw_header(const Battery& b) {
   const int W = gr_fb_width();
   char buf[32];
@@ -314,6 +323,9 @@ static void draw_header(const Battery& b) {
   gr_color(255, 255, 255, 255);
 }
 
+// Page 1: altitude (seven-segment) with 3 h climb/descent and profile,
+// compass rose, step count, GPS line. Records what it drew in S.drawn_* so
+// the sensor callbacks only ask for a redraw when the change is visible.
 static void draw_main_page() {
   const int W = gr_fb_width();
   char buf[32];
@@ -372,18 +384,21 @@ static void draw_arrows() {
 static void change_page(int to);
 static void gps_policy();
 
+// Zoom level z indexes kMapMpp (metres per pixel), clamped to the table.
 static void map_set_zoom(int z) {
   S.map_zoom = z < 0 ? 0 : z >= kMapZooms ? kMapZooms - 1 : z;
   S.view.mpp = kMapMpp[S.map_zoom];
   S.dirty = true;
 }
 
+// Centres the view on the last GPS fix; false if there has never been one.
 static bool map_center_on_fix() {
   if (S.fix_at < 0) return false;
   map_from_lonlat(S.fix.lon, S.fix.lat, &S.view.cx, &S.view.cy);
   return true;
 }
 
+// First visit to the map page: last fix if any, else Mt. Takao.
 static void map_init_view() {
   if (S.map_ready) return;
   S.map_ready = true;
@@ -399,6 +414,7 @@ static void map_to_screen(double gx, double gy, int* x, int* y) {
   *y = int(kBodyTop + (H - kBodyTop) / 2 + (gy - S.view.cy) / upp) + S.drag_dy;
 }
 
+// Round dark button with an optional text symbol, drawn over the map.
 static void map_button(int cx, int cy, const char* sym) {
   gr_color(25, 25, 25, 255);
   draw_ring(cx, cy, 0, kMapButtonR);
@@ -413,6 +429,10 @@ static void map_button_pos(int i, int* x, int* y) {  // 0 follow, 1 zoom in, 2 z
   *y = kArrowY - 2 * 128 + i * 128;
 }
 
+// Page 2. The vector map is rasterised into S.map_surf only when the view
+// changes (it takes 50-200 ms); every other redraw just blits that cache,
+// shifted by the drag offset while a finger moves it, and draws the
+// overlays on top: GPS status, position dot, buttons, scale bar, credit.
 static void draw_map_page() {
   const int W = gr_fb_width(), H = gr_fb_height();
   map_init_view();
@@ -539,6 +559,7 @@ static void draw_page(int page, const Battery& b) {
   else draw_map_page();
 }
 
+// Full redraw of the current page and flip to the panel.
 static void draw() {
   Battery b;
   read_battery(&b);
@@ -593,6 +614,8 @@ static void slide_from(int from) {
 
 // --- GPS duty cycle ---------------------------------------------------------
 
+// Wakes on_alarm() at at_s (CLOCK_BOOTTIME seconds). The timer is a
+// CLOCK_BOOTTIME_ALARM timerfd, so it also wakes the phone from suspend.
 static void arm_alarm(double at_s) {
   if (S.alarm_fd < 0) return;
   itimerspec its = {};
@@ -613,7 +636,14 @@ static void account() {
   S.accounted_ms = now_boot_ms();
 }
 
-// Decides whether the GPS engine should run, and when to look again.
+// Decides whether the GPS engine should run, and when to look again. Called
+// on every event that can change the answer (screen on/off, alarm, fix).
+//   - Until the modem's LOC service shows up, retry every kGpsConnectRetry s
+//     for kGpsConnectGiveUp s after boot, then only at the refresh interval.
+//   - Once connected: search up to kGpsFirstFix s for a first fix, then every
+//     kGpsRefreshEvery s search for kGpsRefreshFor s; with the screen on GPS
+//     runs regardless. A good fix (on_gps_fix) ends a search early.
+// Re-arms the alarm for the next decision point.
 static void gps_policy() {
   if (gps_fd() < 0) return;
   double now = now_s();
@@ -652,6 +682,10 @@ static void gps_policy() {
   arm_alarm(next);
 }
 
+// Every position report from the engine, including "still searching" ones.
+// A valid fix sets the system clock (the PMIC RTC is read-only), calibrates
+// the barometric altitude, recentres a following map, and ends a search once
+// it is better than kGoodFixM. Demo mode drops fixes before any of that.
 static void on_gps_fix(const GpsFix& f) {
   S.dirty = true;
   static uint32_t logged_status = ~0u;
@@ -692,6 +726,7 @@ static void on_gps_fix(const GpsFix& f) {
   }
 }
 
+// Satellite counts, for the "searching n/m sats" lines.
 static void on_gps_sky(const GpsSky& s) {
   if (s.in_view != S.sky.in_view || s.heard != S.sky.heard)
     klog("gps: %d satellites in view, %d heard", s.in_view, s.heard);
@@ -726,6 +761,8 @@ static void compass_for_page() {
   else hub_config(SENS_TYPE_GEO_MAG_ROT_VEC, false, 0, 0);
 }
 
+// Screen on: compass (main page only), barometer at 1 Hz and steps every
+// 10 s, unbatched; flush hands over what was batched while the screen was off.
 static void sensors_screen_on() {
   compass_for_page();
   hub_config(SENS_TYPE_BARO, true, sensor_hz(1.0f), 0);
@@ -734,6 +771,9 @@ static void sensors_screen_on() {
   hub_flush(SENS_TYPE_STEP_COUNT);
 }
 
+// One sample from the sensor hub: pressure -> altitude history, rotation
+// vector -> smoothed heading, step counter -> steps. Marks the screen dirty
+// only when the drawn value would change.
 static void on_hub_sample(const HubSample& s) {
   if (s.sens_type == SENS_TYPE_BARO) {
     S.alt.add_pressure(s.t_boot_s, s.f);
@@ -775,6 +815,8 @@ static int on_hub(int, uint32_t) {
 
 // --- screen -----------------------------------------------------------------
 
+// Screen off: blank the panel, slow and batch the sensors, re-plan GPS,
+// start the sleep measurement, then drop the wakelock so autosleep suspends.
 static void screen_off() {
   gr_color(0, 0, 0, 255);
   gr_clear();
@@ -802,6 +844,8 @@ static void screen_off() {
   wake_unlock();  // autosleep takes it from here
 }
 
+// Screen on: take the wakelock first (so the kernel stays up), then sensors,
+// panel and backlight; draws the page the screen was left on.
 static void screen_on() {
   wake_lock();
   hub_log_stats("while off");
@@ -841,6 +885,8 @@ static void finish_sleep_measurement() {
        (long long)(slept_ms / 1000), ma, int(100 * suspended_ms / total_ms), S.hub_wakes, left_h);
 }
 
+// Key press (value 1 only). POWER toggles the screen; VOL+/- step the
+// backlight, or zoom on the map page. A key on a dark screen only wakes it.
 static void on_key(int code) {
   if (code != KEY_POWER && code != KEY_VOLUMEUP && code != KEY_VOLUMEDOWN) return;
   S.last_key_ms = now_boot_ms();
@@ -862,6 +908,7 @@ static void on_key(int code) {
   backlight(kBacklight[S.bl]);
 }
 
+// Switch pages with the slide animation; the compass runs only on page 1.
 static void change_page(int to) {
   if (to < 0 || to >= kPages || to == S.page) return;
   int from = S.page;
@@ -928,6 +975,7 @@ static void on_touch(int fd, const input_event& ev) {
   }
 }
 
+// minui input callback: one evdev event per call (epoll is level-triggered).
 static int on_input(int fd, uint32_t epevents) {
   input_event ev;
   if (ev_get_input(fd, epevents, &ev) != 0) return 0;
@@ -945,6 +993,9 @@ static void load_timezone() {
   }
 }
 
+// Sets everything up, then runs the event loop: with the screen off it blocks
+// in epoll (the kernel can suspend) until a key, a hub batch, a GPS message or
+// the alarm; with the screen on it also wakes for redraws and the timeout.
 int main() {
   wake_lock();
   klog("start");

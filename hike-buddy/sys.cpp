@@ -17,6 +17,7 @@ static int64_t clock_ms(clockid_t id) {
 int64_t now_mono_ms() { return clock_ms(CLOCK_MONOTONIC); }
 int64_t now_boot_ms() { return clock_ms(CLOCK_BOOTTIME); }
 
+// One-shot sysfs-style read; trailing newline/spaces stripped.
 bool read_str(const char* path, char* buf, int len) {
   int fd = open(path, O_RDONLY | O_CLOEXEC);
   if (fd < 0) return false;
@@ -70,6 +71,8 @@ void backlight(int level) {
   write_str("/sys/class/leds/lcd-backlight/brightness", buf);
 }
 
+// Snapshot of the fuel gauge (bms) and charger (battery) power_supply nodes.
+// "Full" counts as charging: the cable is in either way.
 void read_battery(Battery* b) {
   memset(b, 0, sizeof(*b));
   read_long("/sys/class/power_supply/battery/capacity", &b->capacity_pct);

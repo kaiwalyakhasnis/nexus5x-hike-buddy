@@ -33,6 +33,7 @@ static size_t g_size;
 static Level g_levels[4];
 static int g_nlevels;
 
+// Unaligned little-endian read from the mapped file.
 template <typename T>
 static T rd(const uint8_t* p) {
   T v;
@@ -40,6 +41,8 @@ static T rd(const uint8_t* p) {
   return v;
 }
 
+// Maps the file (it sits in the ramdisk, so this costs no extra RAM), checks
+// the HBMAP1 magic and reads the level table.
 bool map_open(const char* path) {
   int fd = open(path, O_RDONLY | O_CLOEXEC);
   if (fd < 0) {
@@ -75,6 +78,7 @@ bool map_open(const char* path) {
 
 bool map_loaded() { return g_map != nullptr; }
 
+// Web Mercator, as in build_map.py's project().
 void map_from_lonlat(double lon, double lat, double* gx, double* gy) {
   *gx = (lon + 180.0) / 360.0 * kWorld;
   double s = sin(lat * M_PI / 180.0);
@@ -88,6 +92,8 @@ double map_units_per_metre(double gy) {
 
 // --- rasteriser -----------------------------------------------------------------
 
+// Draws straight into a surface's pixels (gr_fill is far too slow for
+// thousands of map segments and drops anything touching the edge).
 struct Raster {
   GRSurface* s;
   int x0, y0, x1, y1;  // clip rectangle, exclusive max
@@ -166,6 +172,7 @@ struct Raster {
   }
 };
 
+// LEB128 varint, as written by build_map.py; false if it runs past end.
 static bool read_varint(const uint8_t*& p, const uint8_t* end, uint64_t* v) {
   uint64_t r = 0;
   for (int s = 0; p < end && s < 64; s += 7) {
@@ -187,6 +194,8 @@ struct Style {
   int dash_on, dash_off;
 };
 
+// Colour, width (px at the most detailed zoom) and dash pattern per kind.
+// Trails are bright pink dashes on purpose: they're what a hiker looks for.
 static Style style_of(int kind) {
   switch (kind) {
     case MOTORWAY: return {235, 120, 60, 6, 0, 0};
@@ -225,6 +234,10 @@ static void place_label(Label* placed, int* n, int max, int x, int y, int scale,
   gr_text_scaled(gr_sys_font(), x, y, s, scale);
 }
 
+// Renders the view in two passes over the visible tiles of one level: lines
+// first, then point symbols and labels on top. The level is picked from the
+// zoom (z13 tiles up to 5 m/px, z11 up to 20, z9 beyond), so a frame never
+// decodes more than a few dozen tiles.
 void map_render(GRSurface* s, int top, int height, const MapView& v) {
   const int W = s->width;
   for (int y = top; y < top + height; ++y) memset(s->data + y * s->row_bytes, 0, W * 4);

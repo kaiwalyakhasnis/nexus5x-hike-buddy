@@ -9,9 +9,12 @@ float pressure_to_altitude_m(float hpa) {
   return 44330.0f * (1.0f - powf(hpa / 1013.25f, 0.190295f));
 }
 
-static const float kHysteresisM = 3.0f;
+static const float kHysteresisM = 3.0f;  // ~1 floor; BMP280 noise stays below it
 static const float kMaxCalUncM = 15.0f;  // only trust fairly good vertical fixes
 
+// Adds one barometer sample. Samples are averaged per minute of CLOCK_BOOTTIME
+// (batches arrive late, so the sample's own time decides its minute); the
+// live value is the latest sample.
 void Altitude::add_pressure(double t_boot_s, float hpa) {
   if (!init_) {
     for (int i = 0; i < kMinutes; ++i) tag_[i] = -1;
@@ -32,6 +35,8 @@ void Altitude::add_pressure(double t_boot_s, float hpa) {
   have_live_ = true;
 }
 
+// Sets the offset that maps standard-atmosphere altitude onto GPS height
+// (the weather moves sea-level pressure by tens of metres' worth).
 void Altitude::calibrate(float gps_msl_m, float vert_unc_m) {
   if (!have_live_ || vert_unc_m <= 0 || vert_unc_m > kMaxCalUncM) return;
   float target = gps_msl_m - live_raw_m_;
@@ -40,6 +45,7 @@ void Altitude::calibrate(float gps_msl_m, float vert_unc_m) {
   calibrated_ = true;
 }
 
+// Stores the finished minute's average in its ring slot (minute % kMinutes).
 void Altitude::close_minute() {
   if (cur_min_ < 0 || count_ == 0) return;
   int slot = cur_min_ % kMinutes;
@@ -64,6 +70,8 @@ bool Altitude::minute(int ago, float* m) const {
   return true;
 }
 
+// Walks the window oldest to newest, counting a climb or descent only once it
+// exceeds kHysteresisM from the last turning point.
 void Altitude::totals(float* up_m, float* down_m) const {
   *up_m = *down_m = 0;
   bool have_ref = false;

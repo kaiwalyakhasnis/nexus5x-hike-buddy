@@ -110,6 +110,8 @@ bool gps_connected() { return g_have_loc; }
 bool gps_radio_low_power() { return g_have_dms; }
 bool gps_running() { return g_running; }
 
+// Asks the IPC router's name service where a QMI service (DMS, LOC) lives:
+// returns its node/port once the modem has registered it.
 static bool lookup(uint32_t service, msm_ipc_server_info* out) {
   server_lookup_args a = {};
   a.port_name.service = service;
@@ -121,7 +123,8 @@ static bool lookup(uint32_t service, msm_ipc_server_info* out) {
   return true;
 }
 
-// TLV message builder.
+// Builds one QMI request body: TLVs of {u8 type, u16 length, value}, after
+// room left for the QmiHeader (filled in when the request is sent).
 struct Msg {
   uint8_t buf[256];
   size_t len = sizeof(QmiHeader);
@@ -153,6 +156,8 @@ static int g_qhead, g_qcount;
 static bool g_in_flight;
 static int64_t g_sent_ms;
 
+// Sends the next queued request unless one is still waiting for its
+// response (given up after kReplyTimeoutMs, so a lost reply can't stall it).
 static void pump() {
   if (g_in_flight && now_mono_ms() - g_sent_ms < kReplyTimeoutMs) return;
   g_in_flight = false;
@@ -178,6 +183,7 @@ static void pump() {
   }
 }
 
+// Queues a request (TLV body without header) and sends it if the line is free.
 static bool queue_req(const msm_ipc_server_info& srv, uint16_t msg_id, const uint8_t* body, size_t n) {
   if (g_qcount == kQueue || n > sizeof(Pending::buf) - sizeof(QmiHeader)) {
     klog("gps: queue full, dropped 0x%04x", msg_id);
@@ -197,7 +203,8 @@ static bool send_req(const msm_ipc_server_info& srv, uint16_t msg_id, Msg& m) {
   return queue_req(srv, msg_id, m.buf + sizeof(QmiHeader), m.len - sizeof(QmiHeader));
 }
 
-// Raw TLV bytes, as Android sent them.
+// Android's setup sequence, replayed byte for byte (captured with strace).
+// Names from the order of loc_eng_reinit() in the HAL source where known.
 struct InitReq {
   uint16_t msg_id;
   uint8_t len;
@@ -205,31 +212,36 @@ struct InitReq {
 };
 static const InitReq kInitSeq[] = {
     {LOC_REG_EVENTS, 11, {0x01, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+    {LOC_REG_EVENTS, 11, {0x01, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0}},  // start with no events
     {0x001E, 0, {}},  // get supported messages
-    {0x0084, 14, {0x01, 4, 0, 0, 0, 0, 0, 0x02, 4, 0, 0, 0, 0, 0}},
-    {0x0084, 14, {0x01, 4, 0, 1, 0, 0, 0, 0x02, 4, 0, 2, 0, 0, 0}},
-    {LOC_REG_EVENTS, 11, {0x01, 8, 0, 0x78, 0xEE, 0x67, 0, 0, 0, 0, 0}},
-    {0x0088, 11, {0x10, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0}},
+    {0x0084, 14, {0x01, 4, 0, 0, 0, 0, 0, 0x02, 4, 0, 0, 0, 0, 0}},  // newer config message,
+    {0x0084, 14, {0x01, 4, 0, 1, 0, 0, 0, 0x02, 4, 0, 2, 0, 0, 0}},  // meaning not documented
+    {LOC_REG_EVENTS, 11, {0x01, 8, 0, 0x78, 0xEE, 0x67, 0, 0, 0, 0, 0}},  // LOC_EVENTS_IDLE
+    {0x0088, 11, {0x10, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0}},  // not documented either
     {0x003A, 7, {0x01, 4, 0, 1, 0, 0, 0}},  // engine lock: none
-    {0x0054, 7, {0x12, 4, 0, 2, 0, 0, 0}},
-    {0x0054, 7, {0x13, 4, 0, 0, 0, 0, 0}},
-    {0x0056, 14, {0x10, 4, 0, 0, 0, 0, 0, 0x11, 4, 0, 1, 0, 0, 0}},
-    {0x0054, 7, {0x14, 4, 0, 0, 0, 0, 0}},
+    {0x0054, 7, {0x12, 4, 0, 2, 0, 0, 0}},  // protocol config: SUPL version
+    {0x0054, 7, {0x13, 4, 0, 0, 0, 0, 0}},  // protocol config: LPP
+    {0x0056, 14, {0x10, 4, 0, 0, 0, 0, 0, 0x11, 4, 0, 1, 0, 0, 0}},  // sensor control config
+    {0x0054, 7, {0x14, 4, 0, 0, 0, 0, 0}},  // protocol config: A-GLONASS
+    // Sensor performance config: accel/gyro samples per batch and batches/s.
     {0x005A, 42, {0x10, 4, 0, 0, 0, 0, 0, 0x11, 4, 0, 5, 0, 2, 0, 0x12, 4, 0, 5, 0, 2, 0,
                   0x13, 4, 0, 0, 0, 0, 0, 0x14, 4, 0, 0x19, 0, 4, 0, 0x15, 4, 0, 0x19, 0, 4, 0}},
     {0x0085, 7, {0x01, 4, 0, 1, 0, 0, 0}},  // XTRA version check: auto
-    // On "location on": unlock again and name Google's SUPL server.
+    // On "location on": unlock again and name Google's SUPL server (assistance
+    // over mobile data; unused here, sent for fidelity).
     {0x003A, 7, {0x01, 4, 0, 1, 0, 0, 0}},
     {0x0042, 30, {0x01, 4, 0, 3, 0, 0, 0, 0x12, 20, 0, 's', 'u', 'p', 'l', '.', 'g', 'o', 'o', 'g',
                   'l', 'e', '.', 'c', 'o', 'm', ':', '7', '2', '7', '5'}},
 };
 
+// Which indications the modem should send us (LOC_EVENTS_*).
 static void reg_events(uint64_t mask) {
   Msg m;
   m.u64(0x01, mask);
   send_req(g_loc, LOC_REG_EVENTS, m);
 }
 
+// Reads the whole XTRA file into memory (27-35 KB); injected later, on request.
 bool gps_load_xtra(const char* path) {
   int fd = open(path, O_RDONLY | O_CLOEXEC);
   if (fd < 0) {
@@ -281,6 +293,8 @@ static void send_xtra_part() {
   if (!queue_req(g_loc, LOC_INJECT_XTRA_DATA, buf, p)) g_xtra_part = 0;
 }
 
+// QMI_LOC_INJECT_UTC_TIME with the system clock, as Android does with NTP
+// time. Skipped while the clock is unset (still near 1970).
 void gps_inject_time() {
   if (!g_have_loc) return;
   timeval tv;
@@ -293,6 +307,8 @@ void gps_inject_time() {
   klog("gps: injected UTC time");
 }
 
+// Looks up DMS (puts the cellular radio in low power once found) and LOC.
+// The first time LOC is found, replays Android's setup and injects the time.
 bool gps_connect() {
   if (g_fd < 0) return false;
   if (!g_have_dms && lookup(kSvcDms, &g_dms)) {
@@ -316,6 +332,8 @@ bool gps_connect() {
   return g_have_loc;
 }
 
+// Starts a periodic session the way Android does: session events on, MSB
+// mode (uses injected time/assistance), high accuracy, altitude not assumed.
 void gps_start(uint32_t interval_ms) {
   if (!g_have_loc) return;
   reg_events(LOC_EVENTS_SESSION);
@@ -334,6 +352,7 @@ void gps_start(uint32_t interval_ms) {
   }
 }
 
+// Stops the session and drops back to the idle event mask.
 void gps_stop() {
   if (!g_have_loc || !g_running) return;
   Msg m;
@@ -358,6 +377,10 @@ static void each_tlv(const uint8_t* p, size_t n, F f) {
   }
 }
 
+// QMI_LOC_EVENT_POSITION_REPORT_IND. TLVs used: 0x01 session status (0 = fix,
+// 1 = in progress, 3 = timeout), 0x10/0x11 lat/lon (double), 0x12 horizontal
+// uncertainty (m), 0x1B altitude above sea level, 0x1C its uncertainty,
+// 0x25 UTC time (ms), 0x2C satellites used.
 static void parse_position(const uint8_t* p, size_t n, const GpsFixCb& on_fix) {
   GpsFix fix = {};
   uint32_t status = ~0u;
@@ -379,6 +402,8 @@ static void parse_position(const uint8_t* p, size_t n, const GpsFixCb& on_fix) {
   on_fix(fix);
 }
 
+// QMI_LOC_EVENT_GNSS_SV_INFO_IND: counts satellites listed and those with a
+// usable signal (SNR > 10 dB-Hz).
 static void parse_sv_info(const uint8_t* p, size_t n, const GpsSkyCb& on_sky) {
   GpsSky sky = {};
   each_tlv(p, n, [&](uint8_t t, const uint8_t* v, uint16_t len) {
@@ -397,6 +422,9 @@ static void parse_sv_info(const uint8_t* p, size_t n, const GpsSkyCb& on_sky) {
   on_sky(sky);
 }
 
+// Drains the socket. Responses free the request line (and drive the XTRA
+// parts); indications are the modem's requests for time/XTRA, results of our
+// requests, engine state, positions and satellite lists.
 void gps_read(const GpsFixCb& on_fix, const GpsSkyCb& on_sky) {
   uint8_t buf[2048];
   for (;;) {

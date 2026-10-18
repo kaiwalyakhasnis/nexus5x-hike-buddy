@@ -26,6 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def phone(cmd, timeout=15):
+    """Runs a shell command on the phone via phone.py; returns its output."""
     env = dict(os.environ, T=str(timeout))
     return subprocess.run([sys.executable, os.path.join(HERE, "phone.py"), cmd], env=env,
                           capture_output=True, text=True).stdout
@@ -41,6 +42,7 @@ def put(path, data):
 
 
 def ev(type_, code, value):
+    """One evdev input_event; writing these to /dev/input/eventN injects them."""
     return struct.pack("<qqHHi", 0, 0, type_, code, value)  # struct input_event, arm64
 
 
@@ -54,6 +56,7 @@ def inject(node, events):
 
 
 def key(code, node=EV_KEYS):
+    """Press and release. POWER is on qpnp_pon (event1), volume on gpio-keys."""
     inject(node, [ev(EV_KEY, code, 1), ev(EV_SYN, 0, 0), ev(EV_KEY, code, 0), ev(EV_SYN, 0, 0)])
 
 
@@ -137,6 +140,7 @@ class Grabber:
 
 
 def shot(path):
+    """One screenshot of whatever the screen shows (woken if it was off)."""
     wake()
     g = Grabber()
     while not g.frames:
@@ -146,6 +150,8 @@ def shot(path):
 
 
 def demo(path):
+    """Scripted tour (main page, map pan/zoom, back) recorded as a GIF with
+    the phone's own frame timing. Identical frames are merged."""
     g = Grabber()                       # setting up takes a while: start it first,
     phone("killall hike-buddy")         # then restart hike-buddy (screen on, main page)
     time.sleep(7)                       # main page: altitude, compass, steps

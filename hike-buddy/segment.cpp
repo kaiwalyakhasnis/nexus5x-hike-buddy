@@ -7,11 +7,13 @@
 //  ggg
 // e   c
 //  ddd
+// Segments lit per digit: bit 0 = a ... bit 6 = g (the usual 7-segment table).
 static const unsigned char kDigit[10] = {
   0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f,
 };
 enum { A = 1, B = 2, C = 4, D = 8, E = 16, F = 32, G = 64 };
 
+// Lights the segments in mask m in a w x h cell with stroke t.
 static void draw_segments(int x, int y, int w, int h, int t, unsigned m) {
   int mid = y + (h - t) / 2;
   int gap = t / 4;  // small gaps between segments read as "LCD"
@@ -24,6 +26,7 @@ static void draw_segments(int x, int y, int w, int h, int t, unsigned m) {
   if (m & C) gr_fill(x + w - t, mid + t + gap, x + w, y + h - t - gap);
 }
 
+// Horizontal space a glyph takes: '.' and ':' are narrow.
 static int advance(char c, int w, int t) {
   return (c == '.' || c == ':') ? t * 2 : w + t;
 }

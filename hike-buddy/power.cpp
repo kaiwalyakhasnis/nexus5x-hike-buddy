@@ -9,14 +9,14 @@
 // The fuel gauge refreshes its SRAM copy of the counter every 30 s, so a
 // reading is at most that stale: a mode switch books up to 30 s of the old
 // mode's drain against the new one. Good enough for whole-session shares.
-static const int64_t kSampleMs = 60000;    // drain-curve point while awake
+static const int64_t kSampleMs = 60000;    // book the drain at least this often (when awake anyway)
 static const int64_t kMinRateMs = 30000;   // shorter modes give no usable rate
 static const int64_t kReportMs = 300000;   // refresh the report at least this often (when awake anyway)
 
 static const char* const kModeName[kPowerModes] = {"standby", "screen", "screen+gps", "gps"};
 static const char* const kPartName[kParts] = {"standby", "screen", "gps", "screen+gps"};
 
-// "HH:MM:SS" local time once the clock is set, else "+H:MM:SS" since boot.
+// "MM-DD HH:MM:SS" local time once the clock is set, else "+H:MM:SS" since boot.
 static void stamp(char* buf, size_t n) {
   time_t t = time(nullptr);
   if (t > 1600000000) {
@@ -37,6 +37,7 @@ static void fmt_dur(char* buf, size_t n, int64_t ms) {
   else snprintf(buf, n, "%lldh%02lldm", (long long)(s / 3600), (long long)(s / 60 % 60));
 }
 
+// Appends one timestamped line to the log file.
 void PowerLedger::log(const char* fmt, ...) const {
   FILE* f = fopen(log_path_, "a");
   if (!f) return;
@@ -51,6 +52,8 @@ void PowerLedger::log(const char* fmt, ...) const {
   fclose(f);
 }
 
+// Kernel wakeup sources (debugfs) with the total time each has held the
+// system awake since boot; diffed against a snapshot taken at unplug.
 static int read_wake_sources(WakeSource* out, int max) {
   FILE* f = fopen("/sys/kernel/debug/wakeup_sources", "r");
   if (!f) return 0;
@@ -72,6 +75,7 @@ static int read_wake_sources(WakeSource* out, int max) {
   return n;
 }
 
+// Successful suspend/resume cycles since boot (debugfs suspend_stats).
 static long read_sleeps() {
   FILE* f = fopen("/sys/kernel/debug/suspend_stats", "r");
   if (!f) return 0;
@@ -81,6 +85,10 @@ static long read_sleeps() {
   return n;
 }
 
+// The ledger's one entry point. Unplugging starts a session (snapshotting
+// the wakeup sources), plugging in closes it; in between, a mode change or
+// kSampleMs elapsing books the drain since the last booking to the mode the
+// phone was in, and mode changes also end a log stint and refresh the report.
 void PowerLedger::update(const Battery& b, PowerMode mode) {
   int64_t now = now_boot_ms(), mono = now_mono_ms();
   bool discharging = !b.charging && b.charge_raw_uah > 0;  // FG reads 0 until settled
@@ -147,6 +155,8 @@ void PowerLedger::end_stint(const Battery& b, int64_t now, int64_t mono) {
   stint_uah_ = b.charge_raw_uah;
 }
 
+// Adds the time, charge and suspended time since the last booking to the
+// current mode. Suspended time = BOOTTIME elapsed - MONOTONIC elapsed.
 void PowerLedger::book(const Battery& b, int64_t now, int64_t mono) {
   ModeTotals& m = modes_[cur_];
   int64_t dt = now - since_ms_;
@@ -175,6 +185,11 @@ static double rate_ua(const ModeTotals& m) {
   return m.ms >= kMinRateMs ? m.uah / (m.ms / 3600000.0) : -1;
 }
 
+// Splits the session's charge into parts. Standby's rate is the baseline the
+// phone pays all the time; each other mode's charge above that baseline goes
+// to what it adds: the screen, the GPS, or both. Screen-on normally runs GPS
+// too, so the screen-only and GPS-only rates are used to divide that mode;
+// until one of them is known the share stays "screen+gps".
 void PowerLedger::parts(PartShare out[kParts]) const {
   for (int i = 0; i < kParts; ++i) out[i] = PartShare();
   double base = rate_ua(modes_[PM_STANDBY]);
@@ -251,6 +266,8 @@ long PowerLedger::sleeps() const {
   return started_ ? read_sleeps() - sleeps_at_start_ : 0;
 }
 
+// The wakeup sources that held the system awake longest this session
+// (current totals minus the unplug snapshot), longest first.
 int PowerLedger::top_wake_sources(WakeSource* out, int max) const {
   if (!started_) return 0;
   static WakeSource cur[kMaxWake];
@@ -281,6 +298,8 @@ int PowerLedger::top_wake_sources(WakeSource* out, int max) const {
   return k;
 }
 
+// Rewrites the report file (via a temp file + rename, so a reader never sees
+// half of it): totals, parts, per-mode table, suspend share, wakeup sources.
 void PowerLedger::write_report(const Battery& b) const {
   if (!started_) return;
   char tmp[128];

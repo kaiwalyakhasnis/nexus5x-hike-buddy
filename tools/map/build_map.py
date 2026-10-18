@@ -128,6 +128,9 @@ def classify_node(tags):
 
 
 def read_osm(path, bbox):
+    """One pass over the extract: (kind, projected points) for every kept way
+    and (kind, point, ele, name) for every kept node inside bbox. Node
+    locations are cached by pyosmium so ways come with coordinates."""
     w, s, e, n = bbox
     lines, points = [], []
     fp = (osmium.FileProcessor(path)
@@ -161,10 +164,12 @@ def read_osm(path, bbox):
 
 
 def zigzag(v):
+    """Signed -> unsigned so small negative deltas stay short varints."""
     return (v << 1) ^ (v >> 63)
 
 
 def varint(out, v):
+    """LEB128, read back by read_varint() in hike-buddy/map.cpp."""
     while v >= 0x80:
         out.append((v & 0x7F) | 0x80)
         v >>= 7
@@ -172,6 +177,9 @@ def varint(out, v):
 
 
 def build_level(z, kinds, tol_m, lines, points, bbox, upm):
+    """Tiles of one level: lines simplified to tol_m and clipped to each tile
+    they cross, coordinates tile-local and shifted to fit 15 bits; points
+    stored once. Features in a tile are sorted into drawing order (ORDER)."""
     tsize = 1 << (WORLD_BITS - z)
     shift = max(0, (WORLD_BITS - z) - 15)  # local coordinates fit in 15 bits
     x0, y1 = project(bbox[0], bbox[1])
@@ -247,6 +255,8 @@ def build_level(z, kinds, tol_m, lines, points, bbox, upm):
 
 
 def write_map(path, levels):
+    """Header, level table, per-level tile index, then all tile blobs
+    (layout in hike-buddy/map.h)."""
     head = bytearray(b'HBMAP1\0\0')
     head += struct.pack('<I', len(levels))
     desc_size = 24
