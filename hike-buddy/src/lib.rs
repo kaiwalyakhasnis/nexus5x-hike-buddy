@@ -6,6 +6,9 @@
 //! the calls fall back fine but the kernel logs a register dump for each.
 
 pub mod altitude;
+pub mod draw;
+mod gr;
+pub mod segment;
 
 /// Version string of the Rust part, NUL-terminated, for the startup log.
 #[no_mangle]
