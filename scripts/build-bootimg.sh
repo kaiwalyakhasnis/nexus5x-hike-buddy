@@ -15,7 +15,11 @@ if ! command -v "${CROSS}g++" >/dev/null; then
 	exit 1
 fi
 
-make -C "$P/hike-buddy" -s CROSS="$CROSS"
+if [ ! -x "$CARGO" ]; then
+	echo "no cargo: install Rust (rustup) and: rustup target add aarch64-unknown-linux-gnu" >&2
+	exit 1
+fi
+make -C "$P/hike-buddy" -s CROSS="$CROSS" CARGO="$CARGO"
 mkdir -p "$P/out/tools"
 "${CROSS}gcc" -O2 -static -s -o "$P/out/tools/hike-buddy-reboot" "$P/tools/hike-buddy-reboot.c"
 # Loaded into Android's rmt_storage: freestanding, no libc of its own.

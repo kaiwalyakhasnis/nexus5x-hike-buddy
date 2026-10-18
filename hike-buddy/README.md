@@ -9,6 +9,12 @@ Built as a static aarch64 binary with a stock Linux cross compiler and glibc
 interfaces, nothing from Android. `scripts/build-bootimg.sh`
 builds it into `out/hike-buddy/hike-buddy` and packs it into the ramdisk.
 
+**Being migrated to Rust**, in place and module by module: `src/` is a Rust
+static library (`Cargo.toml`) linked into the same static binary, and C++
+calls it through `rust.h`. Each module moves over only once it matches the
+C++ one exactly (same outputs, pixel-identical screens, byte-identical GPS
+messages) and passes on the phone. minui stays C++.
+
 ## Files
 
 | File | What it does |

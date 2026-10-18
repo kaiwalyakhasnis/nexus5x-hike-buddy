@@ -1,0 +1,18 @@
+[package]
+name = "hike-buddy"
+version = "0.0.3"
+edition = "2021"
+publish = false
+
+# Being migrated from C++ in place, module by module: Rust builds as a static
+# library that the C++ side links (see Makefile) until main moves over too.
+[lib]
+name = "hike_buddy"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[profile.release]
+panic = "abort"      # never unwind across the C++ boundary
+opt-level = 2
+lto = true
+codegen-units = 1

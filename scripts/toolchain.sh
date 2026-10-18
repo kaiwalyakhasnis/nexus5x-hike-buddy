@@ -11,6 +11,8 @@
 [ -f "$P/local.env" ] && . "$P/local.env"
 
 CROSS=${CROSS:-aarch64-linux-gnu-}
+# cargo for the Rust part; rustup installs it in ~/.cargo/bin.
+CARGO=${CARGO:-$(command -v cargo || echo "$HOME/.cargo/bin/cargo")}
 if [ -n "${LINEAGE:-}" ]; then
 	KGCC=${KGCC:-$LINEAGE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9}
 else

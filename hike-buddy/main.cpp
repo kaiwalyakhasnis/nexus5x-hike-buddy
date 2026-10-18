@@ -47,6 +47,7 @@
 #include "map.h"
 #include "minui/minui.h"
 #include "power.h"
+#include "rust.h"
 #include "segment.h"
 #include "sys.h"
 
@@ -998,7 +999,7 @@ static void load_timezone() {
 // the alarm; with the screen on it also wakes for redraws and the timeout.
 int main() {
   wake_lock();
-  klog("start");
+  klog("start (%s)", hb_rust_version());
   S.demo = access(kDemoFlag, F_OK) == 0;
   if (S.demo) klog("demo mode: GPS positions ignored");
   load_timezone();

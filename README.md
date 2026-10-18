@@ -78,7 +78,8 @@ the PC, simply because that setup already existed. Neither is required:
 What the build does need:
 
 - **PC tools**: `g++-aarch64-linux-gnu` (Debian/Ubuntu package, brings
-  `gcc-aarch64-linux-gnu` and the static glibc), `make`, `git`, `curl`,
+  `gcc-aarch64-linux-gnu` and the static glibc); **Rust** via rustup with
+  `rustup target add aarch64-unknown-linux-gnu`; `make`, `git`, `curl`,
   `fastboot`, Python 3; `g++` for the screen preview; `osmium` + `shapely`
   for the map builder (see `tools/map/`).
 - **Kernel source**: LineageOS's bullhead kernel (the public kernel repo
