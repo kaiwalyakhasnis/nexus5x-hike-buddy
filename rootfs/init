@@ -1,0 +1,12 @@
+#!/bin/busybox sh
+# PID 1. Mount the API filesystems, then hand over to busybox init (inittab).
+/bin/busybox mount -t proc proc /proc
+/bin/busybox --install -s
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mount -t tmpfs tmpfs /tmp
+mkdir -p /dev/pts /sys/fs/pstore
+mount -t devpts devpts /dev/pts
+mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+exec /sbin/init

@@ -1,0 +1,4 @@
+# kernel/ is its own git repo (branch "hike-buddy"); exported to patches/ for publishing
+/kernel/
+/out/
+/local.env

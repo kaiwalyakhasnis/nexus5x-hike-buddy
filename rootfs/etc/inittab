@@ -1,0 +1,6 @@
+# busybox init: <tty>::<action>:<command>
+::sysinit:/etc/hike-buddy-power.sh
+::sysinit:/etc/hike-buddy-usb.sh
+::sysinit:/etc/hike-buddy-modem.sh
+::respawn:/bin/hike-buddy
+::ctrlaltdel:/sbin/reboot

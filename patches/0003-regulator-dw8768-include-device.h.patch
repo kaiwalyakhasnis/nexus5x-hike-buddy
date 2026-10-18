@@ -1,0 +1,28 @@
+From ca7f529f21524da0055048811589c0f8e292c31b Mon Sep 17 00:00:00 2001
+From: kk <kaiwalyakhasnis57@gmail.com>
+Date: Sat, 17 Oct 2026 20:45:43 +0900
+Subject: [PATCH 3/3] regulator: dw8768: include device.h
+
+It only built because CONFIG_DYNAMIC_DEBUG pulled in a struct device
+declaration through printk.h; the hike config drops dynamic debug.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/regulator/dw8768-regulator.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/regulator/dw8768-regulator.c b/drivers/regulator/dw8768-regulator.c
+index 88f952cc..7bb99cea 100644
+--- a/drivers/regulator/dw8768-regulator.c
++++ b/drivers/regulator/dw8768-regulator.c
+@@ -16,6 +16,7 @@
+ #include <linux/init.h>
+ #include <linux/kernel.h>
+ #include <linux/module.h>
++#include <linux/device.h>
+ #include <linux/regulator/of_regulator.h>
+ #include <linux/regulator/driver.h>
+ #include <linux/regulator/machine.h>
+-- 
+2.43.0
+

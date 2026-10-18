@@ -1,0 +1,192 @@
+From afaef068fb2196af92222fc9c3bad9889ebf054a Mon Sep 17 00:00:00 2001
+From: kk <kaiwalyakhasnis57@gmail.com>
+Date: Sat, 17 Oct 2026 20:30:58 +0900
+Subject: [PATCH 2/3] leds: qpnp rgb start sysfs + heartbeat trigger (from
+ nexus5x-rgbled)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/configs/bullhead_defconfig         |  1 +
+ arch/arm64/configs/defconfig                  |  1 +
+ .../configs/lineageos_bullhead_defconfig      |  1 +
+ arch/arm64/configs/msm-perf_defconfig         |  1 +
+ arch/arm64/configs/msm8994-perf_defconfig     |  1 +
+ arch/arm64/configs/msm8994_defconfig          |  1 +
+ arch/arm64/configs/msm_defconfig              |  1 +
+ drivers/leds/leds-qpnp.c                      | 60 +++++++++++++++++++
+ 8 files changed, 67 insertions(+)
+
+diff --git a/arch/arm64/configs/bullhead_defconfig b/arch/arm64/configs/bullhead_defconfig
+index 983c23fb..bcbc7d9a 100644
+--- a/arch/arm64/configs/bullhead_defconfig
++++ b/arch/arm64/configs/bullhead_defconfig
+@@ -507,6 +507,7 @@ CONFIG_LEDS_QPNP_FLASH=y
+ CONFIG_LEDS_QPNP_WLED=y
+ CONFIG_LEDS_TRIGGERS=y
+ CONFIG_LEDS_TRIGGER_TIMER=y
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+ CONFIG_SWITCH=y
+ CONFIG_EDAC=y
+ CONFIG_EDAC_MM_EDAC=y
+diff --git a/arch/arm64/configs/defconfig b/arch/arm64/configs/defconfig
+index 3421f316..aa35f177 100644
+--- a/arch/arm64/configs/defconfig
++++ b/arch/arm64/configs/defconfig
+@@ -128,3 +128,4 @@ CONFIG_CRYPTO_AES_ARM64_CE=y
+ CONFIG_CRYPTO_AES_ARM64_CE_CCM=y
+ CONFIG_CRYPTO_AES_ARM64_CE_BLK=y
+ CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+diff --git a/arch/arm64/configs/lineageos_bullhead_defconfig b/arch/arm64/configs/lineageos_bullhead_defconfig
+index 983c23fb..bcbc7d9a 100644
+--- a/arch/arm64/configs/lineageos_bullhead_defconfig
++++ b/arch/arm64/configs/lineageos_bullhead_defconfig
+@@ -507,6 +507,7 @@ CONFIG_LEDS_QPNP_FLASH=y
+ CONFIG_LEDS_QPNP_WLED=y
+ CONFIG_LEDS_TRIGGERS=y
+ CONFIG_LEDS_TRIGGER_TIMER=y
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+ CONFIG_SWITCH=y
+ CONFIG_EDAC=y
+ CONFIG_EDAC_MM_EDAC=y
+diff --git a/arch/arm64/configs/msm-perf_defconfig b/arch/arm64/configs/msm-perf_defconfig
+index 8057f164..05a4c6a9 100644
+--- a/arch/arm64/configs/msm-perf_defconfig
++++ b/arch/arm64/configs/msm-perf_defconfig
+@@ -395,6 +395,7 @@ CONFIG_MMC_SDHCI=y
+ CONFIG_MMC_SDHCI_PLTFM=y
+ CONFIG_MMC_SDHCI_MSM=y
+ CONFIG_LEDS_TRIGGERS=y
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+ CONFIG_SWITCH=y
+ CONFIG_RTC_CLASS=y
+ CONFIG_RTC_DRV_QPNP=y
+diff --git a/arch/arm64/configs/msm8994-perf_defconfig b/arch/arm64/configs/msm8994-perf_defconfig
+index e0fd8e49..1b0cce7b 100644
+--- a/arch/arm64/configs/msm8994-perf_defconfig
++++ b/arch/arm64/configs/msm8994-perf_defconfig
+@@ -430,6 +430,7 @@ CONFIG_LEDS_QPNP_WLED=y
+ CONFIG_LEDS_TRIGGERS=y
+ CONFIG_LEDS_TRIGGER_BACKLIGHT=y
+ CONFIG_LEDS_TRIGGER_DEFAULT_ON=y
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+ CONFIG_SWITCH=y
+ CONFIG_RTC_CLASS=y
+ CONFIG_RTC_DRV_QPNP=y
+diff --git a/arch/arm64/configs/msm8994_defconfig b/arch/arm64/configs/msm8994_defconfig
+index f83abce3..5c4c13aa 100644
+--- a/arch/arm64/configs/msm8994_defconfig
++++ b/arch/arm64/configs/msm8994_defconfig
+@@ -455,6 +455,7 @@ CONFIG_LEDS_QPNP_WLED=y
+ CONFIG_LEDS_TRIGGERS=y
+ CONFIG_LEDS_TRIGGER_BACKLIGHT=y
+ CONFIG_LEDS_TRIGGER_DEFAULT_ON=y
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+ CONFIG_SWITCH=y
+ CONFIG_EDAC=y
+ CONFIG_EDAC_MM_EDAC=y
+diff --git a/arch/arm64/configs/msm_defconfig b/arch/arm64/configs/msm_defconfig
+index 74dc3511..3ff27cad 100644
+--- a/arch/arm64/configs/msm_defconfig
++++ b/arch/arm64/configs/msm_defconfig
+@@ -404,6 +404,7 @@ CONFIG_MMC_SDHCI=y
+ CONFIG_MMC_SDHCI_PLTFM=y
+ CONFIG_MMC_SDHCI_MSM=y
+ CONFIG_LEDS_TRIGGERS=y
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+ CONFIG_SWITCH=y
+ CONFIG_RTC_CLASS=y
+ CONFIG_RTC_DRV_QPNP=y
+diff --git a/drivers/leds/leds-qpnp.c b/drivers/leds/leds-qpnp.c
+index 2e2b67c0..d3f4a67e 100644
+--- a/drivers/leds/leds-qpnp.c
++++ b/drivers/leds/leds-qpnp.c
+@@ -1892,10 +1892,49 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
+ 	return 0;
+ }
+ 
++static ssize_t rgb_ledclassdev_start_store(struct qpnp_led_data *led, bool isEnabled)
++{
++    int ret = -EINVAL;
++    unsigned long state = isEnabled ? 1 : 0;
++    struct qpnp_led_data *led_array;
++    int i;
++
++    if (led->rgb_cfg->start == (u8)state)
++        return 1;
++
++    led_array = dev_get_drvdata(&led->spmi_dev->dev);
++
++    for (i = 0; i < led_array->num_leds; i++) {
++        switch (led_array[i].id) {
++            case QPNP_ID_RGB_RED:
++            case QPNP_ID_RGB_GREEN:
++            case QPNP_ID_RGB_BLUE:
++                if (led_array[i].rgb_cfg->start == (u8)state)
++                    break;
++
++                led_array[i].rgb_cfg->start = (u8)state;
++                ret = qpnp_rgb_set(&led_array[i]);
++                if (ret < 0)
++                    dev_err(led_array[i].cdev.dev,
++                            "RGB set rgb start failed (%d)\n", ret);
++                if (!(led_array[i].rgb_cfg->pwm_cfg->lut_params.flags &
++                      PM_PWM_LUT_RAMP_UP))
++                    led_array[i].rgb_cfg->start = 0;
++                break;
++            default:
++                break;
++        }
++    }
++
++    return 0;
++}
++
++
+ static void qpnp_led_set(struct led_classdev *led_cdev,
+ 				enum led_brightness value)
+ {
+ 	struct qpnp_led_data *led;
++	int isRgb = 0;
+ 
+ 	led = container_of(led_cdev, struct qpnp_led_data, cdev);
+ 	if (value < LED_OFF) {
+@@ -1905,14 +1944,35 @@ static void qpnp_led_set(struct led_classdev *led_cdev,
+ 
+ 	if (value > led->cdev.max_brightness)
+ 		value = led->cdev.max_brightness;
++	
++	
++	switch (led->id) {
++    		case QPNP_ID_RGB_RED:
++    		case QPNP_ID_RGB_GREEN:
++    		case QPNP_ID_RGB_BLUE:
++        		isRgb = 1;
++        		break;
++    		default:
++        		break;
++		}
++
++	if (isRgb) {
++    		rgb_ledclassdev_start_store(led, false);
++	}
+ 
+ 	led->cdev.brightness = value;
+ 	if (led->in_order_command_processing)
+ 		queue_work(led->workqueue, &led->work);
+ 	else
+ 		schedule_work(&led->work);
++		
++	if (isRgb) {
++    		rgb_ledclassdev_start_store(led, true);
++	}
+ }
+ 
++
++
+ static void __qpnp_led_work(struct qpnp_led_data *led,
+ 				enum led_brightness value)
+ {
+-- 
+2.43.0
+
