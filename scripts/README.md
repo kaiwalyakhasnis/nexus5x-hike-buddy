@@ -15,6 +15,7 @@ settings from `local.env` at the repo root (not committed): `BUSYBOX`
 | `mkbootimg.py` | Minimal Android boot image (v0) writer used by `build-bootimg.sh`. |
 | `phone.py` | Runs one shell command on the phone over the dev USB telnet: `scripts/phone.py 'dmesg | tail'` (`T=` sets the timeout). |
 | `set-time.sh` | Copies the PC's clock to the phone (lost on reboot; the GPS also sets it on its first fix). |
+| `screencap.py` | Screenshots and GIFs straight from the phone's framebuffer, streamed over USB; can inject taps, drags and key presses to script a demo. `screencap.py shot out.png`, `screencap.py demo out.gif` (needs Pillow). Turn on demo mode first so the real position isn't shown. |
 | `power-report.sh` | Prints the battery report and per-mode power log from the phone (`/tmp`, read before rebooting). |
 
 ## Typical loop

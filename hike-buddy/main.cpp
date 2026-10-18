@@ -73,6 +73,10 @@ static const int64_t kAccountEveryMs = 1000;
 static const int64_t kDragRedrawMs = 40;
 static const char* const kMapPath = "/share/hike-buddy.map";
 static const char* const kXtraPath = "/share/xtra3gr.bin";  // downloaded at build time
+// Demo mode for screenshots: GPS positions are ignored, so the real location
+// never shows and the map opens on its default view. Checked at start:
+//   touch /tmp/hike-buddy-demo; killall hike-buddy   (init restarts it)
+static const char* const kDemoFlag = "/tmp/hike-buddy-demo";
 static const int64_t kClockJumpMs = 2000;  // wall clock moved: tell the GPS engine
 static const float kMapMpp[] = {1.5f, 3, 6, 12, 25, 50, 100};  // metres per pixel
 static const int kMapZooms = sizeof(kMapMpp) / sizeof(kMapMpp[0]);
@@ -114,6 +118,7 @@ static struct {
   GpsSky sky = {};
 
   int page = 0;
+  bool demo = false;
   PowerLedger power{"/tmp/hike-buddy-power.log", "/tmp/hike-buddy-power.txt"};
 
   // Map page.
@@ -299,9 +304,10 @@ static void draw_header(const Battery& b) {
   }
   gr_fill(40, 160, W - 40, 166);
 
-  // Page dots, between the clock and the battery.
+  // Page dots, in the gap after the clock (the battery text grows to the
+  // left while charging).
   for (int p = 0; p < kPages; ++p) {
-    int cx = W / 2 + 40 * p - 20 * (kPages - 1);
+    int cx = 370 + 40 * p;
     gr_color(p == S.page ? 255 : 110, p == S.page ? 255 : 110, p == S.page ? 255 : 110, 255);
     draw_ring(cx, 85, p == S.page ? 0 : 7, 11);
   }
@@ -653,7 +659,7 @@ static void on_gps_fix(const GpsFix& f) {
     klog("gps: report status %u%s", f.status, f.valid ? " (position)" : "");
     logged_status = f.status;
   }
-  if (!f.valid) return;
+  if (!f.valid || S.demo) return;
   S.fix = f;
   S.fix_at = now_s();
 
@@ -942,6 +948,8 @@ static void load_timezone() {
 int main() {
   wake_lock();
   klog("start");
+  S.demo = access(kDemoFlag, F_OK) == 0;
+  if (S.demo) klog("demo mode: GPS positions ignored");
   load_timezone();
   S.boot_s = now_s();
   if (gr_init() != 0) {

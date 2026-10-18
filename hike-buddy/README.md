@@ -34,6 +34,12 @@ counting steps and sampling the barometer every 10 s, batching them for
 at 12.5 Hz (main page only), barometer at 1 Hz, GPS at 1 Hz, redraws only
 when something visible changed. 15 s without input turns the screen off.
 
+## Demo mode
+
+For screenshots: `touch /tmp/hike-buddy-demo; killall hike-buddy` (init
+restarts it). GPS positions are then ignored, so the real location never
+appears on screen and the map opens on its default view (Mt. Takao).
+
 ## Debugging
 
     scripts/phone.py 'dmesg | grep hike-buddy'

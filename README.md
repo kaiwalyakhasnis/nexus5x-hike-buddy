@@ -5,6 +5,10 @@ Android: just the Linux kernel, a tiny init and one daemon (`hike-buddy`)
 with a minui front end. Booted recovery-style and tested only with
 `fastboot boot`, so nothing is flashed and the phone's Android stays as is.
 
+<p align="center"><img src="docs/demo.gif" width="300" alt="Hike Buddy on a Nexus 5X: main page, then the offline map (pan, zoom) and back"></p>
+
+<sub>Captured from the phone's framebuffer with `scripts/screencap.py` (demo mode, so no real position is shown).</sub>
+
 ## What it shows
 
 - **Main page:** clock, charge left (mAh) and battery %; barometric altitude
