@@ -22,12 +22,13 @@ messages) and passes on the phone. minui stays C++.
 | `main.cpp` | Event loop, UI pages (main + map), header, key/touch handling, screen on/off, sensor rates per page, GPS duty cycle, clock handling. Start here. |
 | `sys.*` | Small helpers: clocks (`CLOCK_MONOTONIC`/`BOOTTIME`), sysfs read/write, kernel log (`klog` → `dmesg`), wakelock, autosleep, backlight, battery/fuel gauge readings. |
 | `hub.*` | Client for the STM32 sensor hub (`/dev/nanohub`): enables/batches the barometer, step counter and the hub-fused compass (geomagnetic rotation vector) and parses their samples. |
-| `altitude.*` | Barometric altitude: pressure → metres, one value per minute for the last 3 hours, climb/descent totals with hysteresis, calibration from GPS height. |
+| `src/altitude.rs` (+ `altitude.h` wrapper) | **Rust.** Barometric altitude: pressure → metres, one value per minute for the last 3 hours, climb/descent totals with hysteresis, calibration from GPS height. |
 | `gps.*` | QMI LOC client talking straight to the modem's GNSS engine over the kernel IPC router (`AF_MSM_IPC`). Replays the exact sequence Android's location stack sends (setup, UTC time injection, XTRA injection, MSB start), one request at a time. |
 | `map.*` | Offline map: memory-maps `/share/hike-buddy.map` (made by `tools/map/build_map.py`) and rasterises the visible tiles straight into a surface (lines, trails, peaks, labels). |
 | `power.*` | Battery accounting while unplugged: books fuel-gauge charge against the current mode (standby / screen / GPS), splits it into parts, and writes `/tmp/hike-buddy-power.log` and `.txt` (read with `scripts/power-report.sh`). |
 | `draw.*` | Drawing primitives on top of minui: thick lines, rings/discs, triangles, polar coordinates. |
 | `segment.*` | Seven-segment digits for the big numbers (altitude, steps). |
+| `tests/` | Golden tests: a C++ driver run against the old and the new implementation of a module; outputs must be identical (see each file's header). |
 | `minui/` | Android recovery's minimal graphics/input library, vendored and trimmed; see its README. |
 | `preview/` | Host build that renders the screens to images on the PC; see its README. |
 

@@ -3,3 +3,4 @@
 /out/
 /local.env
 __pycache__/
+/hike-buddy/target/
